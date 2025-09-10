@@ -1,36 +1,47 @@
+import functions_framework
 import json
-from flask import Flask, request, jsonify
+import logging
 
-app = Flask(__name__)
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 
-@app.route("/", methods=['POST'])
-def handle_request():
+@functions_framework.http
+def handle_chat_event(request):
     """
-    Handles incoming requests from Google Chat.
+    Handles Google Chat events for an Echo Bot.
+    - Greets users when added to a space.
+    - Echoes back any message it receives.
     """
     try:
-        event = request.json
-        # No need for a token check. The request is authenticated by Google's infrastructure.
-        event_type = event.get("type")
-        
-        if event_type == "MESSAGE":
-            message_text = event["message"]["text"]
-            response_text = f"You said: {message_text}"
-            return jsonify({"text": response_text})
-        
-        elif event_type == "ADDED_TO_SPACE":
-            if event["space"]["type"] == "ROOM":
-                response_text = "Thanks for adding me to this space!"
-            else:
-                response_text = "Thanks for adding me to this direct message!"
-            return jsonify({"text": response_text})
-            
-        else:
-            return jsonify({})
-    
-    except Exception as e:
-        print(f"Error handling request: {e}")
-        return jsonify({"error": "Internal Server Error"}), 500
+        event_data = request.get_json(silent=True)
+        if not event_data:
+            logging.warning("Received empty or non-JSON payload.")
+            return "Bad Request", 400
 
-if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+        logging.info(f"Received event: {json.dumps(event_data)}")
+
+        event_type = event_data.get('type')
+        response_message = {}
+
+        # When the bot is added to a space (or a 1:1 chat), send a greeting.
+        if event_type == 'ADDED_TO_SPACE':
+            response_message = {"text": "Hi!"}
+        
+        # When a user sends a message, echo it back.
+        elif event_type == 'MESSAGE':
+            # Extract the user's message text, stripping any bot mentions.
+            user_message = event_data['message']['text'].strip()
+            response_message = {"text": user_message}
+        
+        # For any other event type, do nothing.
+        else:
+            logging.info(f"Ignored event type: {event_type}")
+            return "", 200
+
+        # Send the prepared response back to Google Chat.
+        return json.dumps(response_message), 200, {'Content-Type': 'application/json; charset=utf-8'}
+
+    except Exception as e:
+        logging.error(f"Error handling request: {e}", exc_info=True)
+        # It's a good practice to not send detailed errors back to the user.
+        return "", 200
