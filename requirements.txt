@@ -1,1 +1,1 @@
-Flask
+functions-framework==3.*
